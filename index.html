@@ -5,8 +5,7 @@
   <title>CIFI Vending Machine</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Include Ethers.js and Tailwind CSS -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
+  <!-- Include Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     /* Custom Styles */
@@ -152,6 +151,9 @@
       </div>
     </div>
   </div>
+
+  <!-- Include Ethers.js before the main script -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
 
   <!-- JavaScript Code -->
   <script>
@@ -1202,7 +1204,7 @@
       walletStatus.textContent = `Connected: ${connectedAddress.substring(0, 6)}...${connectedAddress.substring(38)}`;
 
       await updateBalances();
-      updateNetworkStatus();
+      await updateNetworkStatus();
       enablePurchaseButtons();
     }
 
@@ -1313,15 +1315,17 @@
     }
 
     // Update Network Status
-    function updateNetworkStatus() {
+    async function updateNetworkStatus() {
       const networkIndicator = document.getElementById('networkIndicator');
 
-      if (provider && provider.network) {
-        const isCorrectNetwork = provider.network.chainId === parseInt(AVALANCHE_TESTNET_PARAMS.chainId, 16);
+      try {
+        const network = await provider.getNetwork();
+        const isCorrectNetwork = network.chainId === parseInt(AVALANCHE_TESTNET_PARAMS.chainId, 16);
         networkIndicator.textContent = isCorrectNetwork ? 'Avalanche Fuji' : 'Wrong Network';
         networkIndicator.className = `network-indicator ${isCorrectNetwork ? 'correct-network' : 'wrong-network'}`;
         networkIndicator.style.display = 'block';
-      } else {
+      } catch (error) {
+        console.error('Error getting network:', error);
         networkIndicator.style.display = 'none';
       }
     }
@@ -1337,7 +1341,7 @@
       networkMonitorInterval = setInterval(async () => {
         if (signer) {
           await updateBalances();
-          updateNetworkStatus();
+          await updateNetworkStatus();
         }
       }, UPDATE_INTERVAL);
     }
@@ -1345,7 +1349,7 @@
     // Handle Chain Changed
     async function handleChainChanged(chainId) {
       if (chainId !== AVALANCHE_TESTNET_PARAMS.chainId) {
-        updateNetworkStatus();
+        await updateNetworkStatus();
         alert('Please switch to Avalanche Fuji Testnet');
         try {
           await switchToAvalancheNetwork();
@@ -1362,7 +1366,7 @@
       if (accounts.length === 0) {
         // User disconnected their wallet
         resetUI();
-      } else if (accounts[0] !== connectedAddress) {
+      } else if (accounts[0].toLowerCase() !== connectedAddress.toLowerCase()) {
         // User switched accounts
         connectedAddress = accounts[0];
         await updateUIState();
@@ -1406,8 +1410,17 @@
       document.getElementById('connectButton').addEventListener('click', connectWallet);
 
       // Check if already connected
-      if (window.ethereum && window.ethereum.selectedAddress) {
-        connectWallet();
+      if (window.ethereum) {
+        window.ethereum.request({ method: 'eth_accounts' })
+          .then(accounts => {
+            if (accounts.length > 0) {
+              connectedAddress = accounts[0];
+              connectWallet();
+            }
+          })
+          .catch(err => {
+            console.error('Error checking accounts:', err);
+          });
       }
     });
   </script>
