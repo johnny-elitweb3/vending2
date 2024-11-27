@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="/" />
+  <title>CIFI Vending Machine</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Include Ethers.js and Tailwind CSS -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Custom Styles */
+    .gradient-bg {
+      background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+    }
+    .token-card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(5px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .glow-button {
+      background: linear-gradient(45deg, #3498db, #2ecc71);
+      transition: all 0.3s ease;
+    }
+    .glow-button:hover {
+      box-shadow: 0 0 15px rgba(52, 152, 219, 0.5);
+      transform: translateY(-2px);
+    }
+    .glow-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .loading-spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #3498db;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .network-indicator {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      padding: 0.5rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      z-index: 50;
+    }
+    .network-indicator.wrong-network {
+      background-color: #ef4444;
+      color: white;
+    }
+    .network-indicator.correct-network {
+      background-color: #10b981;
+      color: white;
+    }
+  </style>
+</head>
+<body class="gradient-bg min-h-screen text-white">
+  <!-- Network Status Indicator -->
+  <div id="networkIndicator" class="network-indicator" style="display: none;"></div>
+
+  <div class="container mx-auto px-4 py-8">
+    <div class="max-w-4xl mx-auto">
+      <!-- Header -->
+      <div class="text-center mb-8">
+        <h1 class="text-4xl font-bold mb-4">CIFI Vending Machine</h1>
+        <button id="connectButton" class="glow-button px-6 py-2 rounded-full font-semibold">
+          Connect Wallet
+        </button>
+        <p id="walletStatus" class="mt-2 text-gray-400">Wallet not connected</p>
+      </div>
+
+      <!-- Token Balances -->
+      <div class="grid grid-cols-2 gap-6 mb-8">
+        <div class="token-card p-6 rounded-xl">
+          <h2 class="text-xl font-semibold mb-2">wCIFI Balance</h2>
+          <p id="wcifiBalance" class="text-2xl font-bold">0.00</p>
+        </div>
+        <div class="token-card p-6 rounded-xl">
+          <h2 class="text-xl font-semibold mb-2">wREFI Balance</h2>
+          <p id="wrefiBalance" class="text-2xl font-bold">0.00</p>
+        </div>
+      </div>
+
+      <!-- Token Actions -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Buy wCIFI -->
+        <div class="token-card p-6 rounded-xl">
+          <h3 class="text-lg font-semibold mb-4">Buy wCIFI</h3>
+          <div class="space-y-4">
+            <div class="relative">
+              <input type="number" id="buyWCIFIAmount" class="w-full bg-gray-800 rounded p-2 pr-16" placeholder="Amount" />
+              <span class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400">wCIFI</span>
+            </div>
+            <button id="buyWCIFIButton" class="glow-button w-full py-2 rounded-full" disabled>
+              Buy wCIFI
+            </button>
+            <div class="text-sm text-gray-400">
+              <p>Rate: 1 AVAX = 100 wCIFI</p>
+              <p id="wcifiCost" class="mt-1">Cost: 0 AVAX</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Buy wREFI -->
+        <div class="token-card p-6 rounded-xl">
+          <h3 class="text-lg font-semibold mb-4">Buy wREFI</h3>
+          <div class="space-y-4">
+            <div class="relative">
+              <input type="number" id="buyWREFIAmount" class="w-full bg-gray-800 rounded p-2 pr-16" placeholder="Amount" />
+              <span class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400">wREFI</span>
+            </div>
+            <button id="buyWREFIButton" class="glow-button w-full py-2 rounded-full" disabled>
+              Buy wREFI
+            </button>
+            <div class="text-sm text-gray-400">
+              <p>Rate: 1 AVAX = 50 wREFI</p>
+              <p id="wrefiCost" class="mt-1">Cost: 0 AVAX</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transaction History -->
+      <div class="mt-8 token-card p-6 rounded-xl">
+        <h3 class="text-lg font-semibold mb-4">Recent Transactions</h3>
+        <div id="transactionHistory" class="space-y-2">
+          <!-- Transactions will be inserted here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Modal -->
+  <div id="loadingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+    <div class="bg-white p-6 rounded-xl text-black">
+      <div class="flex items-center">
+        <div class="loading-spinner"></div>
+        <p id="loadingMessage">Processing transaction...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Code -->
+  <script>
+    // Network Parameters for Avalanche Fuji Testnet
+    const AVALANCHE_TESTNET_PARAMS = {
+      chainId: '0xA869', // 43113 in hex
+      chainName: 'Avalanche Fuji',
+      nativeCurrency: {
+        name: 'AVAX',
+        symbol: 'AVAX',
+        decimals: 18
+      },
+      rpcUrls: ['https://api.avax-test.network/ext/bc/C/rpc'],
+      blockExplorerUrls: ['https://testnet.snowtrace.io']
+    };
+
+    // Contract Addresses
+    const VENDING_MACHINE_ADDRESS = '0x97014Ec227F4Be89F8a00F23837C7DA7366f091A'; // Replace with your vending machine contract address
+    const WCIFI_ADDRESS = '0x74b910fcf01C7153b80E3940042BB48518f37257'; // Replace with your wCIFI token contract address
+    const WREFI_ADDRESS = '0x57f086481F362E1E6051544861A4b1724C9fB99F'; // Replace with your wREFI token contract address
+
+    // ABIs (Replace the placeholders with your actual ABIs)
+    const VENDING_MACHINE_ABI = [
+	{
+		"inputs": [],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			}
+		],
+		"name": "OwnableInvalidOwner",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "account",
+				"type": "address"
+			}
+		],
+		"name": "OwnableUnauthorizedAccount",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "token",
+				"type": "address"
+			}
+		],
+		"name": "SafeERC20FailedOperation",
+		"type": "error"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "previousOwner",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "newOwner",
+				"type": "address"
+			}
+		],
+		"name": "OwnershipTransferred",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "account",
+				"type": "address"
+			}
+		],
+		"name": "Paused",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "productId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "name",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "productToken",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "paymentToken",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "price",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "ProductAdded",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "productId",
+				"type": "uint256"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "buyer",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "paymentAmount",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "transactionId",
+				"type": "uint256"
+			}
+		],
+		"name": "ProductPurchased",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "productId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "bool",
+				"name": "isActive",
+				"type": "bool"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "ProductStatusChanged",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "productId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "newPrice",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "newSupply",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "ProductUpdated",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "token",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "timestamp",
+				"type": "uint256"
+			}
+		],
+		"name": "TokensWithdrawn",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"internalType": "address",
+				"name": "account",
+				"type": "address"
+			}
+		],
+		"name": "Unpaused",
+		"type": "event"
+	},
+	{
+		"inputs": [],
+		"name": "MAX_WITHDRAWAL_PERCENTAGE",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "PURCHASE_COOLDOWN",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "WITHDRAWAL_COOLDOWN",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string",
+				"name": "name",
+				"type": "string"
+			},
+			{
+				"internalType": "address",
+				"name": "productToken",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "paymentToken",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "price",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "initialSupply",
+				"type": "uint256"
+			}
+		],
+		"name": "addProduct",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "buyer",
+				"type": "address"
+			}
+		],
+		"name": "getBuyerTransactions",
+		"outputs": [
+			{
+				"components": [
+					{
+						"internalType": "address",
+						"name": "buyer",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "productId",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "paymentAmount",
+						"type": "uint256"
+					},
+					{
+						"internalType": "uint256",
+						"name": "timestamp",
+						"type": "uint256"
+					}
+				],
+				"internalType": "struct TokenVendingMachine.Transaction[]",
+				"name": "",
+				"type": "tuple[]"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "productId",
+				"type": "uint256"
+			}
+		],
+		"name": "getProductRevenue",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "totalSold",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalRevenue",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "getTransactionCount",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "lastPurchaseBlock",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "lastWithdrawalTime",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "owner",
+		"outputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "pause",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "paused",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "productCount",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "products",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "name",
+				"type": "string"
+			},
+			{
+				"internalType": "address",
+				"name": "productToken",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "paymentToken",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "price",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "availableSupply",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "isActive",
+				"type": "bool"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalSold",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalRevenue",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "productId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "purchaseProduct",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "renounceOwnership",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "newOwner",
+				"type": "address"
+			}
+		],
+		"name": "transferOwnership",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "unpause",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "productId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "newPrice",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "additionalSupply",
+				"type": "uint256"
+			}
+		],
+		"name": "updateProduct",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "token",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "withdrawTokens",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	}
+];
+    const TOKEN_ABI = [
+	{
+		"inputs": [],
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "owner",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "Approval",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "from",
+				"type": "address"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "Transfer",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "allowance",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "spender",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "approve",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "success",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "",
+				"type": "address"
+			}
+		],
+		"name": "balanceOf",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "decimals",
+		"outputs": [
+			{
+				"internalType": "uint8",
+				"name": "",
+				"type": "uint8"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "name",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "symbol",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "",
+				"type": "string"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "totalSupply",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "transfer",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "success",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "address",
+				"name": "from",
+				"type": "address"
+			},
+			{
+				"internalType": "address",
+				"name": "to",
+				"type": "address"
+			},
+			{
+				"internalType": "uint256",
+				"name": "value",
+				"type": "uint256"
+			}
+		],
+		"name": "transferFrom",
+		"outputs": [
+			{
+				"internalType": "bool",
+				"name": "success",
+				"type": "bool"
+			}
+		],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	}
+];
+
+    // Global Variables
+    let provider;
+    let signer;
+    let vendingMachineContract;
+    let wCIFIContract;
+    let wREFIContract;
+    let connectedAddress;
+    let networkMonitorInterval;
+
+    // Constants
+    const PRICE_DECIMALS = 18;
+    const UPDATE_INTERVAL = 30000; // 30 seconds
+    const MAX_TRANSACTION_HISTORY = 5;
+
+    // Transaction Manager Class
+    class TransactionManager {
+      constructor() {
+        this.transactions = new Map();
+        this.pendingCount = 0;
+      }
+
+      async addTransaction(txPromise, description) {
+        this.pendingCount++;
+        this.updateLoadingState();
+
+        try {
+          const tx = await txPromise;
+          this.transactions.set(tx.hash, {
+            hash: tx.hash,
+            description,
+            status: 'pending',
+            timestamp: Date.now()
+          });
+
+          await this.waitForTransaction(tx);
+          return true;
+        } catch (error) {
+          console.error('Transaction failed:', error);
+          return false;
+        } finally {
+          this.pendingCount--;
+          this.updateLoadingState();
+        }
+      }
+
+      async waitForTransaction(tx) {
+        try {
+          const receipt = await tx.wait();
+          this.transactions.get(tx.hash).status = receipt.status === 1 ? 'success' : 'failed';
+          this.updateTransactionHistory();
+        } catch (error) {
+          this.transactions.get(tx.hash).status = 'failed';
+          this.updateTransactionHistory();
+        }
+      }
+
+      updateLoadingState() {
+        const loadingModal = document.getElementById('loadingModal');
+        if (this.pendingCount > 0) {
+          loadingModal.classList.remove('hidden');
+        } else {
+          loadingModal.classList.add('hidden');
+        }
+      }
+
+      updateTransactionHistory() {
+        const historyContainer = document.getElementById('transactionHistory');
+        const transactions = Array.from(this.transactions.values())
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, MAX_TRANSACTION_HISTORY);
+
+        historyContainer.innerHTML = transactions.map(tx => `
+          <div class="flex justify-between items-center p-2 bg-gray-800 rounded">
+            <div class="flex items-center">
+              <span class="mr-2 ${tx.status === 'success' ? 'text-green-400' : 'text-red-400'}">●</span>
+              <span>${tx.description}</span>
+            </div>
+            <a href="https://testnet.snowtrace.io/tx/${tx.hash}" 
+               target="_blank" 
+               class="text-blue-400 hover:text-blue-300">
+              View
+            </a>
+          </div>
+        `).join('');
+      }
+    }
+
+    const txManager = new TransactionManager();
+
+    // Wallet Connection Function
+    async function connectWallet() {
+      try {
+        if (typeof window.ethereum === 'undefined') {
+          throw new Error('Please install MetaMask to use this application');
+        }
+
+        await switchToAvalancheNetwork();
+        await requestAccounts();
+        await initializeProvider();
+        await setupContracts();
+        await updateUIState();
+        setupEventListeners();
+        startPeriodicUpdates();
+
+      } catch (error) {
+        console.error('Wallet connection error:', error);
+        updateUIError(error.message);
+      }
+    }
+
+    // Switch to Avalanche Network
+    async function switchToAvalancheNetwork() {
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: AVALANCHE_TESTNET_PARAMS.chainId }],
+        });
+      } catch (switchError) {
+        if (switchError.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [AVALANCHE_TESTNET_PARAMS],
+          });
+        } else {
+          throw new Error('Failed to switch to Avalanche network');
+        }
+      }
+    }
+
+    // Request Accounts from MetaMask
+    async function requestAccounts() {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      if (accounts.length === 0) {
+        throw new Error('No accounts found');
+      }
+      connectedAddress = accounts[0];
+    }
+
+    // Initialize Ethers Provider and Signer
+    async function initializeProvider() {
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      signer = provider.getSigner();
+    }
+
+    // Setup Contracts
+    function setupContracts() {
+      vendingMachineContract = new ethers.Contract(VENDING_MACHINE_ADDRESS, VENDING_MACHINE_ABI, signer);
+      wCIFIContract = new ethers.Contract(WCIFI_ADDRESS, TOKEN_ABI, signer);
+      wREFIContract = new ethers.Contract(WREFI_ADDRESS, TOKEN_ABI, signer);
+    }
+
+    // Update UI State
+    async function updateUIState() {
+      const connectButton = document.getElementById('connectButton');
+      const walletStatus = document.getElementById('walletStatus');
+
+      connectButton.textContent = 'Connected';
+      connectButton.disabled = true;
+      walletStatus.textContent = `Connected: ${connectedAddress.substring(0, 6)}...${connectedAddress.substring(38)}`;
+
+      await updateBalances();
+      updateNetworkStatus();
+      enablePurchaseButtons();
+    }
+
+    // Setup Event Listeners
+    function setupEventListeners() {
+      window.ethereum.removeListener('chainChanged', handleChainChanged);
+      window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+
+      window.ethereum.on('chainChanged', handleChainChanged);
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+
+      // Input listeners for real-time price updates
+      document.getElementById('buyWCIFIAmount').addEventListener('input', updateWCIFICost);
+      document.getElementById('buyWREFIAmount').addEventListener('input', updateWREFICost);
+
+      // Buy button listeners
+      document.getElementById('buyWCIFIButton').addEventListener('click', () => handlePurchase(1));
+      document.getElementById('buyWREFIButton').addEventListener('click', () => handlePurchase(2));
+    }
+
+    // Update wCIFI Cost
+    function updateWCIFICost(event) {
+      const amount = parseFloat(event.target.value) || 0;
+      const costInAVAX = amount / 100; // 1 AVAX = 100 wCIFI
+      document.getElementById('wcifiCost').textContent = `Cost: ${costInAVAX.toFixed(4)} AVAX`;
+      document.getElementById('buyWCIFIButton').disabled = amount <= 0;
+    }
+
+    // Update wREFI Cost
+    function updateWREFICost(event) {
+      const amount = parseFloat(event.target.value) || 0;
+      const costInAVAX = amount / 50; // 1 AVAX = 50 wREFI
+      document.getElementById('wrefiCost').textContent = `Cost: ${costInAVAX.toFixed(4)} AVAX`;
+      document.getElementById('buyWREFIButton').disabled = amount <= 0;
+    }
+
+    // Handle Purchase Function
+    async function handlePurchase(productId) {
+      if (!signer) {
+        alert('Please connect your wallet first');
+        return;
+      }
+
+      const amountInput = document.getElementById(
+        productId === 1 ? 'buyWCIFIAmount' : 'buyWREFIAmount'
+      );
+
+      const amountValue = parseFloat(amountInput.value);
+      if (isNaN(amountValue) || amountValue <= 0) {
+        alert('Please enter a valid amount');
+        return;
+      }
+
+      const amount = ethers.utils.parseUnits(amountValue.toString(), PRICE_DECIMALS);
+
+      try {
+        let txPromise;
+        let description;
+
+        if (productId === 1) {
+          // Purchase wCIFI with AVAX
+          const costInAVAX = ethers.utils.parseUnits((amountValue / 100).toString(), PRICE_DECIMALS);
+          txPromise = vendingMachineContract.purchaseProduct(productId, amount, {
+            value: costInAVAX
+          });
+          description = `Buy ${amountValue} wCIFI`;
+        } else if (productId === 2) {
+          // Purchase wREFI with AVAX
+          const costInAVAX = ethers.utils.parseUnits((amountValue / 50).toString(), PRICE_DECIMALS);
+          txPromise = vendingMachineContract.purchaseProduct(productId, amount, {
+            value: costInAVAX
+          });
+          description = `Buy ${amountValue} wREFI`;
+        }
+
+        await txManager.addTransaction(txPromise, description);
+
+        // Clear input and update balances
+        amountInput.value = '';
+        await updateBalances();
+
+      } catch (error) {
+        console.error('Purchase failed:', error);
+        alert(`Purchase failed: ${error.message}`);
+      }
+    }
+
+    // Update Token Balances
+    async function updateBalances() {
+      if (!signer || !wCIFIContract || !wREFIContract) return;
+
+      try {
+        const address = await signer.getAddress();
+
+        // Get wCIFI balance
+        const wCIFIBal = await wCIFIContract.balanceOf(address);
+        document.getElementById('wcifiBalance').textContent =
+          ethers.utils.formatUnits(wCIFIBal, PRICE_DECIMALS);
+
+        // Get wREFI balance
+        const wREFIBal = await wREFIContract.balanceOf(address);
+        document.getElementById('wrefiBalance').textContent =
+          ethers.utils.formatUnits(wREFIBal, PRICE_DECIMALS);
+
+      } catch (error) {
+        console.error('Error updating balances:', error);
+      }
+    }
+
+    // Update Network Status
+    function updateNetworkStatus() {
+      const networkIndicator = document.getElementById('networkIndicator');
+
+      if (provider && provider.network) {
+        const isCorrectNetwork = provider.network.chainId === parseInt(AVALANCHE_TESTNET_PARAMS.chainId, 16);
+        networkIndicator.textContent = isCorrectNetwork ? 'Avalanche Fuji' : 'Wrong Network';
+        networkIndicator.className = `network-indicator ${isCorrectNetwork ? 'correct-network' : 'wrong-network'}`;
+        networkIndicator.style.display = 'block';
+      } else {
+        networkIndicator.style.display = 'none';
+      }
+    }
+
+    // Start Periodic Updates
+    function startPeriodicUpdates() {
+      // Clear existing interval if any
+      if (networkMonitorInterval) {
+        clearInterval(networkMonitorInterval);
+      }
+
+      // Start new interval
+      networkMonitorInterval = setInterval(async () => {
+        if (signer) {
+          await updateBalances();
+          updateNetworkStatus();
+        }
+      }, UPDATE_INTERVAL);
+    }
+
+    // Handle Chain Changed
+    async function handleChainChanged(chainId) {
+      if (chainId !== AVALANCHE_TESTNET_PARAMS.chainId) {
+        updateNetworkStatus();
+        alert('Please switch to Avalanche Fuji Testnet');
+        try {
+          await switchToAvalancheNetwork();
+        } catch (error) {
+          console.error('Error switching network:', error);
+        }
+      } else {
+        window.location.reload();
+      }
+    }
+
+    // Handle Accounts Changed
+    async function handleAccountsChanged(accounts) {
+      if (accounts.length === 0) {
+        // User disconnected their wallet
+        resetUI();
+      } else if (accounts[0] !== connectedAddress) {
+        // User switched accounts
+        connectedAddress = accounts[0];
+        await updateUIState();
+      }
+    }
+
+    // Reset UI
+    function resetUI() {
+      connectedAddress = null;
+      provider = null;
+      signer = null;
+
+      const connectButton = document.getElementById('connectButton');
+      connectButton.textContent = 'Connect Wallet';
+      connectButton.disabled = false;
+
+      document.getElementById('walletStatus').textContent = 'Wallet not connected';
+      document.getElementById('wcifiBalance').textContent = '0.00';
+      document.getElementById('wrefiBalance').textContent = '0.00';
+
+      document.getElementById('buyWCIFIButton').disabled = true;
+      document.getElementById('buyWREFIButton').disabled = true;
+
+      document.getElementById('networkIndicator').style.display = 'none';
+    }
+
+    // Enable Purchase Buttons
+    function enablePurchaseButtons() {
+      document.getElementById('buyWCIFIButton').disabled = false;
+      document.getElementById('buyWREFIButton').disabled = false;
+    }
+
+    // Update UI Error
+    function updateUIError(message) {
+      alert(message);
+      document.getElementById('walletStatus').textContent = 'Error connecting wallet';
+    }
+
+    // Initialize the Application
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('connectButton').addEventListener('click', connectWallet);
+
+      // Check if already connected
+      if (window.ethereum && window.ethereum.selectedAddress) {
+        connectWallet();
+      }
+    });
+  </script>
+</body>
+</html>
