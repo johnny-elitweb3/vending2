@@ -5,7 +5,8 @@
   <title>CIFI Vending Machine</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Include Tailwind CSS -->
+  <!-- Include Ethers.js and Tailwind CSS -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     /* Custom Styles */
@@ -151,9 +152,6 @@
       </div>
     </div>
   </div>
-
-  <!-- Include Ethers.js before the main script -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
 
   <!-- JavaScript Code -->
   <script>
@@ -1348,8 +1346,8 @@
 
     // Handle Chain Changed
     async function handleChainChanged(chainId) {
-      if (chainId !== AVALANCHE_TESTNET_PARAMS.chainId) {
-        await updateNetworkStatus();
+      await updateNetworkStatus();
+      if (parseInt(chainId, 16) !== parseInt(AVALANCHE_TESTNET_PARAMS.chainId, 16)) {
         alert('Please switch to Avalanche Fuji Testnet');
         try {
           await switchToAvalancheNetwork();
